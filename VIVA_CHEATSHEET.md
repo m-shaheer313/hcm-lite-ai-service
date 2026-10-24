@@ -74,6 +74,9 @@ hcm-lite-ai-service/
 | `app/main.py` | Entry point | The file that starts the FastAPI app | App + lifespan + `/health` | "This is where the app starts." |
 | `app/config.py` | Settings | One place for env names and limits | pydantic-settings; fails fast if required vars are missing | "Change settings here, not all over the code." |
 | `app/schemas.py` | Data shapes | Fixed format for API bodies | Pydantic models (HealthResponse so far) | "It forces answers into a clean format." |
+| `app/models.py` | Database tables | One SQLModel class per table | users, employees, departments, leave_types, leave_requests, attendance, payroll_runs, payslips, ai_logs, settings, holidays | "The rules live in the database: one attendance per day, one payroll per month, money as integer paisa." |
+| `app/db.py` | Database connection | Builds the engine and creates tables | `make_engine`, `init_db` (create_all, no Alembic), session dependency | "Postgres on Render, SQLite in tests — same code." |
+| `tests/conftest.py` | Test setup | Gives every test a fresh in-memory SQLite DB | `engine` and `session` fixtures; dummy secret only | "Each test gets a clean database in memory." |
 | `tests/` | Test files | Check that things still work | SQLite + dummy secret in conftest; no real keys | "It catches bugs before the demo." |
 | `docs/` | Notes folder | Contract and design notes | Filled in later tasks | "Where I keep my design promises." |
 | `eval/` | Eval scripts | Judge questions as PASS/FAIL | Filled in Task 10 | "It checks the AI answers like a judge." |
@@ -180,8 +183,39 @@ No surprises at deploy time: wrong or missing settings crash at startup, not dur
 **VIVA answer (30 seconds)**
 > Before coding I wrote a spec, a plan, and a task list, because in a 9-hour hackathon guessing is expensive. Then I set up the project with uv, pinned Python 3.13, and built the smallest possible FastAPI app: one `/health` endpoint and settings that come only from environment variables — the app refuses to start if a required one is missing, so deployment problems appear immediately, not during the demo.
 
+## Step 2b: Data Models (Task 2)
+
+**What is it?**
+The database tables of the app, written as SQLModel classes: users, employees, departments, leave types, leave requests, attendance, payroll runs, payslips, AI logs, settings, holidays.
+
+**Simple analogy (for non-tech people)**
+It is the set of registers (straight, clean ledgers) an office keeps: one attendance register with exactly one line per person per day, one payroll register with one sheet per month.
+
+**Why did I use it?**
+The whole app depends on these shapes. Putting the hard rules in the database itself (not only in Python) means even a bug cannot create two attendance rows for one day or two payroll runs for one month.
+
+**How did I do it?**
+1. Wrote one SQLModel class per table in `app/models.py`.
+2. Money is stored as **integer paisa** (1 PKR = 100 paisa) — no floats, so amounts are always exact.
+3. Added DB constraints: unique (employee, day) on attendance (backs the 409), unique employee code and user email, one payroll run per month, and leave `start <= end` as a CHECK.
+4. `app/db.py` builds the engine and runs `create_all` (no Alembic migrations).
+5. Tests use in-memory SQLite; a smoke check proved the same code creates tables and inserts rows on a real file DB (Postgres-compatible types only).
+
+**Problem it solves**
+Data integrity with zero trust in code paths: the 409 (second check-in) and one-run-per-month rules are enforced by the database, and money can never lose precision.
+
+**Key points to remember**
+- SQLModel table names are lowercase singular (`Employee` → `employee`); foreign keys must match that exactly.
+- Money = integer minor units (`*_minor`), never float.
+- Tests create data only in tests; the real app starts empty (no seed data).
+- `create_all` only creates missing tables — simple, fine for a hackathon, no migrations.
+
+**VIVA answer (30 seconds)**
+> I defined every table with SQLModel and pushed the business-critical rules into database constraints — for example a unique index on (employee, day) is what physically backs the "second check-in is rejected with 409" rule. All money is stored as integer paisa so there is never a float rounding error, and the same models run on SQLite for tests and Neon Postgres in production.
+
 - [x] Step 1: Spec / Plan (spec.md, plan.md, tasks.md)
 - [x] Step 2: Project Setup (uv, .env, API key test)
+- [x] Step 2b: Data Models (Task 2)
 - [ ] Step 3: First Agent (instructions + model)
 - [ ] Step 4: Tools (what actions the agent can do)
 - [ ] Step 5: Structured Output (Pydantic)
