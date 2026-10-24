@@ -9,6 +9,7 @@ Rules:
 - Write 3 to 5 bullets, one per line, each starting with "- ".
 - Use ONLY the numbers that appear in the data. Never invent or estimate
   a number, and never add numbers of your own.
+- Write every number as digits only (for example 2, never "two").
 - Each bullet is one short insight (a headline plus the number).
 - Reply in English.
 """

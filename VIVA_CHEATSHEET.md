@@ -1,4 +1,4 @@
-# VIVA CHEATSHEET — [PROJECT NAME]
+# VIVA CHEATSHEET — HCM Lite AI Service
 
 > **How to use (delete this note later):**
 > - Har step complete hone ke **foran baad** (3-5 min) uska section bharo. Raat ke end par nahi.
@@ -102,6 +102,7 @@ hcm-lite-ai-service/
 | `app/services/smart_leave_service.py` | Smart leave flow | Sentence -> validated draft (never saved) | extract via typed output, resolve dates, validate, retry once, fallback | "The AI pre-fills the form; the user confirms." |
 | `app/services/summary_service.py` | Dashboard summary | KPI JSON -> 3-5 grounded bullets | server-computed KPIs, grounding check, honest code fallback | "Summary numbers are the dashboard's numbers." |
 | `app/services/ai_common.py` | Shared AI pieces | Label + rate limit for all AI endpoints | AI_LABEL, enforce_rate_limit (20/user/hour from ai_logs) | "One limit and one label across all AI endpoints." |
+| `app/guardrails/input_guardrail.py` | Input screen | Cheap check BEFORE any agent runs | injection + off-topic patterns; blocked calls are logged | "Obvious attacks are stopped in microseconds, without an LLM call." |
 | `tests/conftest.py` | Test setup | Gives every test a fresh in-memory SQLite DB | `engine` and `session` fixtures; dummy secret only | "Each test gets a clean database in memory." |
 | `tests/` | Test files | Check that things still work | SQLite + dummy secret in conftest; no real keys | "It catches bugs before the demo." |
 | `docs/` | Notes folder | Contract and design notes | Filled in later tasks | "Where I keep my design promises." |
@@ -389,6 +390,33 @@ Wrong dates (LLM date hallucination), wrong types, saved-by-mistake leaves, inve
 **VIVA answer (30 seconds)**
 > For smart leave the model's only job is extraction — leave type, day words, reason — and deterministic Python resolves "next Monday" or "agle somwar" against today's date in Karachi, validates the range, and returns a pre-fill; if anything fails twice, the endpoint returns fallback true and the normal form appears. The AI never saves anything. The dashboard summary recomputes the KPIs on the server with the same function as the dashboard, then checks that every single number in the bullets — even one digit — exists in that data, with an honest code-built fallback. Both share the rate limit and log every call.
 
+## Step 8: Reliability — Input Guardrail + Request Logs (Task 8)
+
+**What is it?**
+Two finishes: a cheap input screen that runs before any agent, and one structured JSON log line per HTTP request with a request id.
+
+**Simple analogy (for non-tech people)**
+The screen is the metal detector at the gate: it does not interrogate anyone (that is the guard inside), it just catches obvious weapons in seconds. The request log is the visitor book: every visit gets a ticket number, so any complaint can be traced.
+
+**Why did I use it?**
+An LLM-based pre-check would double cost and latency for every message. A pattern check costs microseconds, catches the obvious attacks, and everything subtle still hits the real defenses (tool allowlist, data delimiters, grounding).
+
+**How did I do it?**
+1. `screen_input()` in `app/guardrails/input_guardrail.py`: pure substring check for injection phrases ("ignore all instructions", "reveal your system prompt", "you are now a", ...) and clearly off-topic asks. Blocked input gets a friendly refusal, status `blocked` in ai_logs, and the model is never called (tested).
+2. The same screen is attached to the chat agent as an SDK `@input_guardrail` — defense in depth inside the Runner.
+3. A tiny middleware gives every response an `x-request-id` header and logs `{"request_id", "method", "path", "status", "latency_ms"}` as one JSON line — never headers or bodies, so tokens stay out of logs.
+
+**Problem it solves**
+Cheap first line of defense against prompt injection and junk traffic, plus traceable requests when a judge says "it errored a minute ago".
+
+**Key points to remember**
+- Screen = patterns, not understanding; unclear input passes to the strong defenses.
+- Blocked calls are logged like every other AI call.
+- Timeout, rate limit, ai_logs, label, and delimiters were built in Tasks 6–7; this task completes the MUST list.
+
+**VIVA answer (30 seconds)**
+> Before any agent runs, a pure-Python screen checks the message for obvious prompt-injection and off-topic patterns — microseconds, no model call — and blocked messages get a polite refusal that is logged in ai_logs. The same check is also attached inside the Agents SDK as an input guardrail, so it holds even if a future code path skips the pre-check. Every HTTP response also carries a request id and one JSON log line, which never includes headers, so tokens and keys never appear in logs.
+
 - [x] Step 1: Spec / Plan (spec.md, plan.md, tasks.md)
 - [x] Step 2: Project Setup (uv, .env, API key test)
 - [x] Step 2b: Data Models (Task 2)
@@ -397,6 +425,7 @@ Wrong dates (LLM date hallucination), wrong types, saved-by-mistake leaves, inve
 - [x] Step 5: AI Tools + role allowlist (Task 5)
 - [x] Step 6: Chat Agent — Runner, policy Q&A, grounding, safety (Task 6)
 - [x] Step 7: Smart Leave + Dashboard Summary (Task 7)
+- [x] Step 8: Reliability — input guardrail + request logs (Task 8)
 - [ ] Step 3: First Agent (instructions + model)
 - [ ] Step 4: Tools (what actions the agent can do)
 - [ ] Step 5: Structured Output (Pydantic)
@@ -406,6 +435,37 @@ Wrong dates (LLM date hallucination), wrong types, saved-by-mistake leaves, inve
 - [ ] Step 9: Tracing / Hooks (observability)
 - [ ] Step 10: UI (Chainlit / Next.js)
 - [ ] Step 11: Deployment (Docker / Render / HF Spaces / Vercel)
+
+---
+
+## Deployment: Neon and Render
+
+**What is it?**
+The live demo setup: the Postgres database lives on Neon, the app runs on Render's free tier, and both are wired only through environment variables.
+
+**Simple analogy (for non-tech people)**
+Neon is the rented safe (the database), Render is the rented shop (the running app). The shop never keeps valuables in the code — every secret is handed over as a sealed envelope (environment variable) when the shop opens.
+
+**Why did I use it?**
+Both are free, support Python 3.13, and need zero server administration — right for a one-night hackathon with a live URL for judges.
+
+**How did I do it?**
+1. Neon: created a project and copied the connection string (it ends with `sslmode=require`) into `DATABASE_URL`.
+2. GitHub: pushed `main`; Render connects the repo directly.
+3. Render web service: Runtime Python, env `PYTHON_VERSION=3.13`, build `pip install uv && uv sync --frozen`, start `uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
+4. Secrets in Render's env settings only: `DATABASE_URL`, `JWT_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `AI_API_KEY`, `AI_MODEL`. Tables are created automatically on startup (`create_all`).
+5. Deployed early (after auth) on purpose — deploy problems belong to the evening, not to 4 AM. One real bug was found this way: two app instances starting at once on the same Neon DB raced on table creation; `init_db` now retries once.
+
+**Problem it solves**
+A public HTTPS URL judges can open, with no keys in the repo and no manual database setup.
+
+**Key points to remember**
+- Free tiers = single instance; the in-memory rate limiter notes this and Redis would be the multi-instance fix.
+- `create_all` runs on every boot and only creates missing tables.
+- `/health` is Render's and my first check after every deploy.
+
+**VIVA answer (30 seconds)**
+> The database is a Neon Postgres instance and the app is a Render web service built from the GitHub repo with Python 3.13. Every secret — database URL, JWT secret, admin bootstrap, AI key — is a Render environment variable, so nothing sensitive is in the code or git. The schema is created automatically on startup, `/health` confirms each deploy, and I deployed early in the night specifically to catch infrastructure problems while there was still time to fix them — which is how I found and fixed a concurrent-startup table-creation race on Postgres.
 
 ---
 

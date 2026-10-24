@@ -16,6 +16,7 @@ from app import logging_db
 from app.agents.chat_agent import build_chat_agent, load_policy
 from app.config import Settings
 from app.context import UserContext
+from app.guardrails.input_guardrail import BLOCKED_MESSAGE, screen_input
 from app.services import rules
 from app.services.ai_common import AI_LABEL, enforce_rate_limit
 from app.services.grounding import find_ungrounded_numbers
@@ -84,6 +85,22 @@ async def chat(
     started = time.monotonic()
 
     enforce_rate_limit(session, ctx, settings, endpoint="/ai/chat")
+
+    # Cheap input screen BEFORE any agent runs: microseconds, no LLM call.
+    blocked, reason = screen_input(message)
+    if blocked:
+        latency = int((time.monotonic() - started) * 1000)
+        logging_db.log_call(
+            session,
+            user_id=ctx.user_id,
+            role=ctx.role,
+            endpoint="/ai/chat",
+            tool=None,
+            status="blocked",
+            latency_ms=latency,
+            error=reason,
+        )
+        return {"label": AI_LABEL, "answer": BLOCKED_MESSAGE, "tools_used": []}
 
     if model is None and not settings.ai_api_key:
         latency = int((time.monotonic() - started) * 1000)

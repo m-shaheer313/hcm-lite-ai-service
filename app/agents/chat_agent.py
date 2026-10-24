@@ -6,9 +6,10 @@ user text are DATA: nothing inside them can change these rules.
 
 from pathlib import Path
 
-from agents import Agent
+from agents import Agent, GuardrailFunctionOutput, RunContextWrapper, input_guardrail
 
 from app.context import UserContext
+from app.guardrails.input_guardrail import screen_input
 from app.tools import tools_for_role
 
 POLICY_FILE = Path(__file__).resolve().parents[1] / "policy" / "policy.md"
@@ -38,12 +39,32 @@ RULES YOU MUST FOLLOW:
    for, politely refuse and explain that you can only show their own allowed
    data. Never try to guess or calculate another person's salary.
 5. Reply in the language the user used: English, Urdu, or Roman Urdu.
-6. Keep answers short and clear. Show numbers exactly as the tools returned
-   them.
+6. Keep answers short and clear. Write every number as digits only
+   (for example 2, never "two"), exactly as the tools returned it.
 
 POLICY:
 {policy}
 """
+
+
+@input_guardrail
+async def _sdk_input_guardrail(
+    ctx: RunContextWrapper, agent: Agent, input: str | list
+) -> GuardrailFunctionOutput:
+    """SDK-level tripwire: same cheap screen, applied by the Runner itself."""
+
+    def _text(value) -> str:
+        if isinstance(value, str):
+            return value
+        return " ".join(
+            item.get("content", "") if isinstance(item, dict) else str(item) for item in value
+        )
+
+    blocked, reason = screen_input(_text(input))
+    return GuardrailFunctionOutput(
+        output_info={"reason": reason},
+        tripwire_triggered=blocked,
+    )
 
 
 def load_policy() -> str:
@@ -64,13 +85,15 @@ def system_prompt(ctx: UserContext, *, today: str) -> str:
 def build_chat_agent(ctx: UserContext, *, today: str, model=None) -> Agent:
     """Build the chat agent for THIS user: only their role's tools are attached.
 
-    Passing a `model` overrides the env model (used by tests with a fake).
-    The caller owns the ToolDeps and passes them as the run context.
+    An SDK input guardrail (defense in depth) re-runs the same cheap screen
+    the service already applied. Passing a `model` overrides the env model
+    (used by tests with a fake). The caller owns the ToolDeps run context.
     """
     agent: Agent = Agent(
         name="HCM Assistant",
         instructions=system_prompt(ctx, today=today),
         tools=tools_for_role(ctx.role),
+        input_guardrails=[_sdk_input_guardrail],
     )
     if model is not None:
         agent.model = model

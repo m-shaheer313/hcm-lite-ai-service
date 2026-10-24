@@ -3,9 +3,13 @@
 Layers: routes (HTTP only) -> services (business rules) -> repositories (SQL).
 """
 
+import json
+import logging
+import time
+import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
 from app.config import Settings
 from app.db import init_db, make_engine
@@ -18,6 +22,10 @@ from app.routes import leaves as leaves_routes
 from app.routes import org as org_routes
 from app.routes import payroll as payroll_routes
 from app.schemas import HealthResponse
+
+logger = logging.getLogger("hcm.requests")
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+QUIET_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
 
 
 @asynccontextmanager
@@ -41,6 +49,31 @@ app.include_router(leaves_routes.router)
 app.include_router(payroll_routes.router)
 app.include_router(analytics_routes.router)
 app.include_router(ai_routes.router)
+
+
+@app.middleware("http")
+async def request_log(request: Request, call_next):
+    """One structured JSON log line per request, with a request id.
+
+    Never logs headers (tokens live there) or bodies.
+    """
+    request_id = uuid.uuid4().hex[:12]
+    started = time.monotonic()
+    response = await call_next(request)
+    response.headers["x-request-id"] = request_id
+    if request.url.path not in QUIET_PATHS:
+        logger.info(
+            json.dumps(
+                {
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status": response.status_code,
+                    "latency_ms": int((time.monotonic() - started) * 1000),
+                }
+            )
+        )
+    return response
 
 
 @app.get("/health", response_model=HealthResponse)
