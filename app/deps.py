@@ -5,12 +5,19 @@ from typing import Annotated
 
 import jwt as pyjwt
 from fastapi import Depends, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlmodel import Session
 
 from app.context import UserContext
 from app.errors import AuthError, ForbiddenError
 from app.repositories import users as user_repo
 from app.security import decode_access_token
+
+# auto_error=False so OUR error shape (401 JSON) is returned, while /docs
+# still gets the Authorize button.
+_bearer_scheme = HTTPBearer(
+    auto_error=False, description="Paste the token from /setup or /auth/login"
+)
 
 
 def get_db(request: Request) -> Generator[Session]:
@@ -19,13 +26,13 @@ def get_db(request: Request) -> Generator[Session]:
         yield session
 
 
-def get_token(request: Request) -> str:
+def get_token(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)],
+) -> str:
     """Read the Bearer token from the Authorization header."""
-    auth = request.headers.get("authorization", "")
-    scheme, _, token = auth.partition(" ")
-    if scheme.lower() != "bearer" or not token:
+    if credentials is None:
         raise AuthError("Missing bearer token. Please log in.")
-    return token
+    return credentials.credentials
 
 
 def get_current_user(

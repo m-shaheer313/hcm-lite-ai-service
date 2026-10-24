@@ -97,6 +97,11 @@ hcm-lite-ai-service/
 | `app/logging_db.py` | AI call log | One ai_logs row per AI call + rate-limit counter | log_call, count_recent_calls; DB down -> stdout, never fails the request | "Every AI call is logged, even refusals." |
 | `app/policy/policy.md` | Company policy | The only source for policy answers | attendance, leave, payroll, role rules from the brief | "Policy answers come only from this file or 'I do not know'." |
 | `tests/fake_model.py` | Fake LLM | Runs the real agent loop without a key | scripted Responses-API items (text or tool calls) | "Tests exercise the real agent, not a mock of it." |
+| `app/services/resolve_dates.py` | Date resolver | Turns day words into exact dates — no LLM maths | next-weekday rule, today/tomorrow/kal/parso, EN + Roman Urdu days | "'Next Monday' is computed in Python, never by the model." |
+| `app/services/grounding.py` | Number check | Every number in an answer must come from trusted text | tool results + policy + server dates | "Invented numbers never reach the user." |
+| `app/services/smart_leave_service.py` | Smart leave flow | Sentence -> validated draft (never saved) | extract via typed output, resolve dates, validate, retry once, fallback | "The AI pre-fills the form; the user confirms." |
+| `app/services/summary_service.py` | Dashboard summary | KPI JSON -> 3-5 grounded bullets | server-computed KPIs, grounding check, honest code fallback | "Summary numbers are the dashboard's numbers." |
+| `app/services/ai_common.py` | Shared AI pieces | Label + rate limit for all AI endpoints | AI_LABEL, enforce_rate_limit (20/user/hour from ai_logs) | "One limit and one label across all AI endpoints." |
 | `tests/conftest.py` | Test setup | Gives every test a fresh in-memory SQLite DB | `engine` and `session` fixtures; dummy secret only | "Each test gets a clean database in memory." |
 | `tests/` | Test files | Check that things still work | SQLite + dummy secret in conftest; no real keys | "It catches bugs before the demo." |
 | `docs/` | Notes folder | Contract and design notes | Filled in later tasks | "Where I keep my design promises." |
@@ -354,6 +359,36 @@ Invented numbers (grounding check), leaking other people's data (allowlist + pro
 **VIVA answer (30 seconds)**
 > The chat builds a new agent for each request with only the logged-in user's tools, and a system prompt that carries the policy plus one key rule: tool output and user text are data, never instructions. Every number in the answer is checked against the actual tool results — if a number does not match, I retry once and otherwise refuse to guess. Calls are rate-limited to 20 per hour, time out after 15 seconds with a friendly message, and every call — including refusals — is logged to ai_logs. All of this is tested with a fake model that runs the real agent loop, so my tests need no API key.
 
+## Step 7: Smart Leave + Dashboard Summary (Task 7)
+
+**What is it?**
+Two AI endpoints: `/ai/smart-leave` turns a plain sentence into a validated leave DRAFT (nothing saved), and `/ai/dashboard-summary` turns server-computed KPIs into 3–5 grounded bullets.
+
+**Simple analogy (for non-tech people)**
+Smart leave is a receptionist who writes the dates on the form for you — but the calendar maths is done by the office calendar (deterministic code), never by the receptionist's memory. The summary is an intern who may only read numbers off the manager's own report; if they make one up, the report is shown instead.
+
+**Why did I use it?**
+LLMs are bad at calendars ("next Monday" changes with today's date and timezone) and good at extracting words. So the model only copies day words and picks a type; Python resolves dates in Asia/Karachi and validates. For summaries, the server recomputes the KPIs so a client can never feed fake numbers.
+
+**How did I do it?**
+1. `resolve_dates.py` (pure): "next Monday" = first such weekday strictly after today; supports today/tomorrow/kal/parso, weekday names in English and Roman Urdu (somwar, mangal, jumma...), "next week".
+2. Smart leave: typed extraction agent (`output_type`) returns {type, day words, reason} only; code builds and validates the draft (type exists, start <= end, not past, >=1 working day); one retry, then `fallback: true` so the normal form shows. Shares the rate limit and ai_logs; "AI-generated" label; never writes a leave row (tested).
+3. Dashboard summary: the server calls the same analytics function as `/analytics/kpis` (same filters: start, end, department), the writer agent makes bullets, the grounding check runs on every number, and the honest fallback builds bullets directly from the KPI JSON in code (logged `summary_fallback`, never silent). Employee gets 403.
+4. Grounding upgraded to ALL numbers (even single digits); allowed sources: tool data, the policy file, and server-provided dates. Test: a model that invents "3" when the data says 2 is caught and retried.
+5. OpenAPI now has an HTTPBearer scheme — paste the token once in /docs and try every endpoint.
+
+**Problem it solves**
+Wrong dates (LLM date hallucination), wrong types, saved-by-mistake leaves, invented summary numbers, and un-testable endpoints.
+
+**Key points to remember**
+- The LLM never computes a date; `resolve_dates` does, using Karachi's today.
+- Summary numbers come from the server's own KPI call, never the request body.
+- Both endpoints share one rate limit (counted from ai_logs) and always log.
+- fallback=true is a feature: the normal form shows instead of a wrong draft.
+
+**VIVA answer (30 seconds)**
+> For smart leave the model's only job is extraction — leave type, day words, reason — and deterministic Python resolves "next Monday" or "agle somwar" against today's date in Karachi, validates the range, and returns a pre-fill; if anything fails twice, the endpoint returns fallback true and the normal form appears. The AI never saves anything. The dashboard summary recomputes the KPIs on the server with the same function as the dashboard, then checks that every single number in the bullets — even one digit — exists in that data, with an honest code-built fallback. Both share the rate limit and log every call.
+
 - [x] Step 1: Spec / Plan (spec.md, plan.md, tasks.md)
 - [x] Step 2: Project Setup (uv, .env, API key test)
 - [x] Step 2b: Data Models (Task 2)
@@ -361,6 +396,7 @@ Invented numbers (grounding check), leaking other people's data (allowlist + pro
 - [x] Step 4: Core HR Services — attendance, leave, payroll, KPIs (Task 4)
 - [x] Step 5: AI Tools + role allowlist (Task 5)
 - [x] Step 6: Chat Agent — Runner, policy Q&A, grounding, safety (Task 6)
+- [x] Step 7: Smart Leave + Dashboard Summary (Task 7)
 - [ ] Step 3: First Agent (instructions + model)
 - [ ] Step 4: Tools (what actions the agent can do)
 - [ ] Step 5: Structured Output (Pydantic)

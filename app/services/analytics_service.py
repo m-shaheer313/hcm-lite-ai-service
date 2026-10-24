@@ -230,7 +230,11 @@ def kpis(
 ) -> dict:
     """Entry point used by the route and by the AI tools."""
     if start is None or end is None:
-        start, end = _month_range(date.today())
+        # Default month in the office timezone, not the server's UTC date.
+        from datetime import UTC, datetime
+
+        today = rules.today_in_karachi(datetime.now(UTC))
+        start, end = _month_range(today)
     if ctx.role in ("admin", "hr"):
         data = company_kpis(session, ctx, start=start, end=end, department_id=department_id)
         scope = "company"

@@ -6,7 +6,6 @@ to ai_logs -> always return a friendly answer with the AI-generated label.
 """
 
 import asyncio
-import re
 import time
 from datetime import UTC, datetime
 
@@ -14,14 +13,14 @@ from agents import ModelSettings, RunConfig, Runner
 from sqlmodel import Session
 
 from app import logging_db
-from app.agents.chat_agent import build_chat_agent
+from app.agents.chat_agent import build_chat_agent, load_policy
 from app.config import Settings
 from app.context import UserContext
-from app.errors import RateLimitError
 from app.services import rules
+from app.services.ai_common import AI_LABEL, enforce_rate_limit
+from app.services.grounding import find_ungrounded_numbers
 from app.tools import ToolDeps
 
-AI_LABEL = "AI-generated"
 TIMEOUT_MESSAGE = (
     "Sorry, that took too long. Please try again in a moment — "
     "your data is safe, nothing was changed."
@@ -35,18 +34,10 @@ UNGROUNDABLE_MESSAGE = (
     "Please check the dashboard for the exact figures."
 )
 
-# Numbers with 2+ digits are checked; single digits are too easy to false-alarm.
-_NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
-
-def _normalize(text: str) -> set[str]:
-    """All number tokens of a text, without commas."""
-    return {match.replace(",", "") for match in _NUMBER_RE.findall(text)}
-
-
-def find_ungrounded_numbers(answer: str, tool_text: str) -> list[str]:
-    """Pure check: numbers in the answer that do not exist in the tool data."""
-    return sorted(_normalize(answer) - _normalize(tool_text) - {"09", "15"})
+def allowed_number_sources(tool_text: str, today: str) -> str:
+    """Numbers may come from tool data, the policy, or the server's date."""
+    return f"{tool_text}\n{load_policy()}\n{today}"
 
 
 async def _run_once(
@@ -92,22 +83,7 @@ async def chat(
     """Handle one /ai/chat request. Never raises at the user."""
     started = time.monotonic()
 
-    recent = logging_db.count_recent_calls(session, ctx.user_id)
-    if recent >= settings.rate_limit_per_hour:
-        latency = int((time.monotonic() - started) * 1000)
-        logging_db.log_call(
-            session,
-            user_id=ctx.user_id,
-            role=ctx.role,
-            endpoint="/ai/chat",
-            tool=None,
-            status="rate_limited",
-            latency_ms=latency,
-        )
-        raise RateLimitError(
-            f"You have used your {settings.rate_limit_per_hour} AI requests for this hour. "
-            "Please try again later."
-        )
+    enforce_rate_limit(session, ctx, settings, endpoint="/ai/chat")
 
     if model is None and not settings.ai_api_key:
         latency = int((time.monotonic() - started) * 1000)
@@ -123,16 +99,17 @@ async def chat(
         return {"label": AI_LABEL, "answer": NOT_CONFIGURED_MESSAGE, "tools_used": []}
 
     try:
+        today = rules.today_in_karachi(datetime.now(UTC)).isoformat()
         answer, deps = await _run_once(session, ctx, settings, message, model=model)
 
-        # Grounding: every number in the answer must come from tool data.
-        tool_text = " ".join(deps.tool_results)
-        if find_ungrounded_numbers(answer, tool_text):
+        # Grounding: every number in the answer must come from trusted text.
+        allowed = allowed_number_sources(" ".join(deps.tool_results), today)
+        if find_ungrounded_numbers(answer, allowed):
             answer2, deps2 = await _run_once(session, ctx, settings, message, model=model)
             deps.used_tools.extend(deps2.used_tools)
             deps.tool_results.extend(deps2.tool_results)
-            tool_text = " ".join(deps.tool_results)
-            if find_ungrounded_numbers(answer2, tool_text):
+            allowed = allowed_number_sources(" ".join(deps.tool_results), today)
+            if find_ungrounded_numbers(answer2, allowed):
                 answer, status = UNGROUNDABLE_MESSAGE, "ungrounded_fallback"
             else:
                 answer, status = answer2, "ok"

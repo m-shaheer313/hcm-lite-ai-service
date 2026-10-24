@@ -261,3 +261,28 @@ class ChatResponse(BaseModel):
     label: str
     answer: str
     tools_used: list[str]
+
+
+class LeaveDraft(BaseModel):
+    """A pre-fill for the leave form. Nothing is saved by the AI."""
+
+    leave_type: str
+    start: date
+    end: date
+    reason: str
+
+
+class SmartLeaveResponse(BaseModel):
+    """fallback=true means: show the normal leave form instead."""
+
+    label: str
+    fallback: bool
+    draft: LeaveDraft | None
+
+
+class SummaryResponse(BaseModel):
+    """3 to 5 bullets. fallback=true means code-built bullets were used."""
+
+    label: str
+    summary: list[str]
+    fallback: bool

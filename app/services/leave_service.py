@@ -1,6 +1,6 @@
 """Leave services: apply with rule checks, balances, HR approve/reject."""
 
-from datetime import date
+from datetime import UTC, date, datetime
 
 from sqlmodel import Session
 
@@ -10,6 +10,11 @@ from app.models import LeaveRequest
 from app.repositories import employees as emp_repo
 from app.repositories import leaves as leave_repo
 from app.services import rules
+
+
+def karachi_today() -> date:
+    """Today in the office timezone — never the server's UTC date."""
+    return rules.today_in_karachi(datetime.now(UTC))
 
 
 def _require_employee_id(ctx: UserContext) -> int:
@@ -31,7 +36,7 @@ def used_days(session: Session, employee_id: int, type_code: str, *, year: int) 
 def balances(session: Session, ctx: UserContext) -> list[dict]:
     """My remaining balance per leave type (quota minus approved days this year)."""
     employee_id = _require_employee_id(ctx)
-    year = date.today().year
+    year = karachi_today().year
     result = []
     for lt in leave_repo.all_types(session):
         used = 0
@@ -106,7 +111,7 @@ def apply(
 ) -> LeaveRequest:
     """Employee applies for leave. Overlap or over-balance is a 422."""
     employee_id = _require_employee_id(ctx)
-    today = today or date.today()
+    today = today or karachi_today()
 
     type_id, working_days = _validate_and_count(
         session,
@@ -176,7 +181,7 @@ def _decide(
             raise NotFoundError("Leave type no longer exists.")
         # Re-check rules: other leaves may have been approved since this was
         # filed. The request itself is excluded from the overlap check.
-        today = today or date.today()
+        today = today or karachi_today()
         if req.end_day >= today:  # a fully past request is approved as history
             type_id, working_days = _validate_and_count(
                 session,

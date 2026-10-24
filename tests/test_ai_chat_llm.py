@@ -35,4 +35,5 @@ def test_hr_headcount_answer_matches_data(client, session: Session) -> None:
     )
 
     assert result["label"] == "AI-generated"
-    assert "2" in result["answer"]
+    # The model may write the digit or the word.
+    assert "2" in result["answer"] or "two" in result["answer"].lower()

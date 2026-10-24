@@ -73,6 +73,47 @@ def test_find_ungrounded_numbers_flags_invented_numbers() -> None:
     assert find_ungrounded_numbers("There are 57 employees.", tool_text) == ["57"]
 
 
+def test_find_ungrounded_numbers_catches_a_single_invented_digit() -> None:
+    """Even a 1-digit invented number is flagged — the model said 3, data says 2."""
+    assert find_ungrounded_numbers("There are 3 employees.", '{"headcount": 2}') == ["3"]
+
+
+def test_find_ungrounded_numbers_allows_policy_and_dates() -> None:
+    policy = "annual 14 days, sick 8; grace 15 minutes after 09:00"
+    assert find_ungrounded_numbers("The annual quota is 14 days.", policy) == []
+    # A date quoted from tool data decomposes into allowed tokens.
+    tool_text = '{"from_day": "2026-10-01", "to_day": "2026-10-31"}'
+    assert find_ungrounded_numbers("From 2026-10-01 to 2026-10-31.", tool_text) == []
+
+
+def test_chat_flags_model_that_invents_small_number(client: TestClient, session: Session) -> None:
+    seed_hr_company(client, session)
+    add_employee(session, code="E1", name="Ali")
+    add_employee(session, code="E2", name="Bilal")
+
+    model = FakeModel(
+        [
+            tool_call("get_headcount"),
+            text_response("There are 3 active employees."),  # data says 2
+            tool_call("get_headcount"),
+            text_response("There are 3 active employees."),  # still wrong
+        ]
+    )
+    result = asyncio.run(chat_service.chat(session, hr_ctx(), settings(), "How many?", model=model))
+
+    assert result["answer"] == chat_service.UNGROUNDABLE_MESSAGE
+    rows = session.exec(select(AiLog)).all()
+    assert rows[-1].status == "ungrounded_fallback"
+
+
+# ---- OpenAPI authorize button ----
+
+
+def test_openapi_has_bearer_security_scheme(client: TestClient) -> None:
+    spec = client.get("/openapi.json").json()
+    assert "HTTPBearer" in spec["components"]["securitySchemes"]
+
+
 # ---- chat flow with the fake model ----
 
 
