@@ -3,6 +3,8 @@
 The app fails fast at startup if a required variable is missing.
 """
 
+import os
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Company rules from the brief (constants, not settings — they do not change per env).
@@ -29,12 +31,18 @@ class Settings(BaseSettings):
     # Auth
     jwt_expires_minutes: int = 240  # 4 hours; short for a hackathon demo
 
-    # AI settings (used from Task 6 on). The key is mapped to the SDK in Task 6.
+    # AI settings (used from Task 6 on).
     ai_api_key: str | None = None
-    ai_model: str | None = None
+    ai_model: str = "gpt-4o-mini"  # small and cheap, per the brief
     ai_timeout_seconds: float = 15.0
     max_turns: int = 5
+    max_output_tokens: int = 800
     rate_limit_per_hour: int = 20
+
+    def model_post_init(self, __context: object, /) -> None:
+        """Map AI_API_KEY to the env name the OpenAI Agents SDK expects."""
+        if self.ai_api_key:
+            os.environ.setdefault("OPENAI_API_KEY", self.ai_api_key)
 
 
 def get_settings() -> Settings:

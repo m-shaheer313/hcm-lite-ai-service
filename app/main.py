@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from app.config import Settings
 from app.db import init_db, make_engine
 from app.errors import install_error_handlers
+from app.routes import ai as ai_routes
 from app.routes import analytics as analytics_routes
 from app.routes import attendance as attendance_routes
 from app.routes import auth as auth_routes
@@ -39,6 +40,7 @@ app.include_router(attendance_routes.router)
 app.include_router(leaves_routes.router)
 app.include_router(payroll_routes.router)
 app.include_router(analytics_routes.router)
+app.include_router(ai_routes.router)
 
 
 @app.get("/health", response_model=HealthResponse)

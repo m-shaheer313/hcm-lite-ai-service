@@ -5,11 +5,7 @@ built with only the employee tools, so the model physically has no tool to
 fetch another person's data.
 """
 
-from dataclasses import dataclass
-
-from sqlmodel import Session
-
-from app.context import UserContext
+from app.tools.deps import ToolDeps
 from app.tools.hr_tools import (
     get_attendance_summary,
     get_headcount,
@@ -19,6 +15,13 @@ from app.tools.hr_tools import (
     get_payroll_summary,
     search_employees,
 )
+
+__all__ = [
+    "ALL_TOOLS",
+    "EMPLOYEE_TOOL_NAMES",
+    "ToolDeps",
+    "tools_for_role",
+]
 
 ALL_TOOLS = [
     get_headcount,
@@ -32,18 +35,6 @@ ALL_TOOLS = [
 
 # Employees only ever get their own leave balance tool.
 EMPLOYEE_TOOL_NAMES = {"get_my_leave_balance"}
-
-
-@dataclass
-class ToolDeps:
-    """What every tool receives via RunContextWrapper.context.
-
-    ctx is the verified user (role, ids) from the JWT; session is the request's
-    database session. Tools call services with these — never SQL directly.
-    """
-
-    ctx: UserContext
-    session: Session
 
 
 def tools_for_role(role: str) -> list:

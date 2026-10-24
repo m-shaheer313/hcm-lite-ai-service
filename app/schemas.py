@@ -244,3 +244,20 @@ class KpiResponse(BaseModel):
     from_day: date
     to_day: date
     kpis: dict[str, Any]
+
+
+# ---- AI chat ----
+
+
+class ChatRequest(StrictModel):
+    """POST /ai/chat."""
+
+    message: str = Field(min_length=1, max_length=2000)
+
+
+class ChatResponse(BaseModel):
+    """Every AI answer carries the AI-generated label."""
+
+    label: str
+    answer: str
+    tools_used: list[str]

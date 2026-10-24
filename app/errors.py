@@ -60,6 +60,13 @@ class RuleViolationError(AppError):
     code = "rule_violation"
 
 
+class RateLimitError(AppError):
+    """429: too many AI requests from this user in the window."""
+
+    status_code = 429
+    code = "rate_limited"
+
+
 def install_error_handlers(app: FastAPI) -> None:
     """Attach all error handlers to the app. Called once from main."""
 

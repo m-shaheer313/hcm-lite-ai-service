@@ -117,10 +117,9 @@ def calc_payslip(
 
     absent = expected working days - attended - leave days (never below 0).
     deductions = gross x (absent + unpaid + 0.5 x half days) / working days,
-    capped at gross. Tax follows the brief exactly: the slab applies to
-    gross x 12 (annual), divided by 12 for the month — independent of
-    deductions. So a fully absent month can end with a small negative net
-    (the monthly tax is still owed); that is what the brief says.
+    capped at gross. Tax follows the brief's slab on gross x 12, divided by
+    12 — but the monthly tax is capped at pay after deductions, so net pay
+    is never negative.
     """
     absent = max(working_days - attended_days - paid_leave_days - unpaid_leave_days, 0)
     gross = gross_from_basic(basic_minor)
@@ -136,8 +135,9 @@ def calc_payslip(
     else:
         deductions = 0
     deductions = min(deductions, gross)
-    # Brief: tax slab on gross x 12, then / 12 for this month.
-    tax = monthly_tax_minor(gross)
+    # Brief: tax slab on gross x 12, then / 12 for this month — capped at the
+    # pay that is actually left, so net never goes below zero.
+    tax = min(monthly_tax_minor(gross), max(gross - deductions, 0))
     net = gross - deductions - tax
     return {
         "working_days": working_days,
