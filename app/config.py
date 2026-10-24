@@ -5,6 +5,14 @@ The app fails fast at startup if a required variable is missing.
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Company rules from the brief (constants, not settings — they do not change per env).
+OFFICE_TIMEZONE = "Asia/Karachi"
+LATE_AFTER = "09:15"  # office 09:00 + 15 min grace
+WEEKEND_DAYS = frozenset({5, 6})  # Saturday=5, Sunday=6
+MIN_FULL_DAY_HOURS = 5.0  # less than this is a half day
+GROSS_MULTIPLIER_NUM = 3  # gross = 1.5 x basic, kept as 3/2 in integer paisa
+GROSS_MULTIPLIER_DEN = 2
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

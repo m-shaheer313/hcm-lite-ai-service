@@ -83,6 +83,13 @@ hcm-lite-ai-service/
 | `app/repositories/users.py` | User table access | The only place that queries users | get_by_email, get_by_id, count_users, create_user (parameterized) | "SQL lives here, not in routes." |
 | `app/services/auth_service.py` | Auth logic | Setup, login, change password rules | first-run guard, default leave types, temp-password rules | "All auth rules live in services, not in routes." |
 | `app/routes/auth.py` | HTTP layer | Thin auth endpoints | /setup, /auth/login, /auth/change-password, /me | "Routes only parse and call the service." |
+| `app/services/rules.py` | Pure business rules | All brief math in one testable place | working days, late/half-day, gross, tax slabs, payslip calc | "The rules are plain functions — no database, easy to test." |
+| `app/services/employee_service.py` | Employee logic | Onboarding + directory rules | register with temp password, department create/search | "HR registers a person; the system makes their login." |
+| `app/services/attendance_service.py` | Attendance logic | Check-in/out rules + daily board | 409 second check-in, late after 09:15, half day under 5h, absent/on-leave board | "The server stamps every time; nobody can fake a time." |
+| `app/services/leave_service.py` | Leave logic | Apply/approve rules | overlap 422, balance 422, working days only, approve re-checks | "Approving re-checks the rules because the world changed since filing." |
+| `app/services/payroll_service.py` | Payroll logic | Monthly run, finalize lock, payslip | draft lines per employee, admin finalize (locked), printable HTML payslip | "Payroll is a draft until Admin locks it." |
+| `app/services/analytics_service.py` | KPI logic | Role-scoped numbers | company KPIs (Admin/HR) vs personal KPIs (Employee) | "The same numbers the AI will quote later." |
+| `app/repositories/` | SQL layer | The only place queries live | one file per table family (users, employees, attendance, leaves, payroll, departments) | "SQL lives here, not in routes." |
 | `tests/conftest.py` | Test setup | Gives every test a fresh in-memory SQLite DB | `engine` and `session` fixtures; dummy secret only | "Each test gets a clean database in memory." |
 | `tests/` | Test files | Check that things still work | SQLite + dummy secret in conftest; no real keys | "It catches bugs before the demo." |
 | `docs/` | Notes folder | Contract and design notes | Filled in later tasks | "Where I keep my design promises." |
@@ -250,10 +257,41 @@ No stolen or old token survives deactivation, no employee can read another emplo
 **VIVA answer (30 seconds)**
 > Auth is JWT with a bcrypt-hashed password. On every single request I decode the token, reload the user from the database, and reject if the account was deactivated — so an old token dies the moment an admin turns someone off. Roles and data scope are checked by one reusable guard that produces a verified UserContext, and that exact same context object is what I will pass to the AI tools, which is how I guarantee the AI never sees more than the logged-in user.
 
+## Step 4: Core HR Services (Task 4)
+
+**What is it?**
+The real backend slice: departments, employee onboarding with a temporary password, server-stamped attendance, leave with quota rules, monthly payroll with tax, and role-scoped KPIs.
+
+**Simple analogy (for non-tech people)**
+The office machinery behind the AI: the attendance register that stamps time itself, the leave register that knows your balance, and the payroll calculator that follows the company formula.
+
+**Why did I use it?**
+The AI must answer from REAL data that matches the dashboards. So the rules (late, half day, quotas, tax) live in one pure-functions file, and both the REST routes and (later) the AI tools call the same service functions.
+
+**How did I do it?**
+1. Wrote every brief rule as a pure function in `app/services/rules.py` (no DB, no HTTP): working days, late after 09:15, half day under 5h, gross = 1.5 × basic, tax slabs, payslip line.
+2. Services use those rules: check-in stamps the time server-side (second check-in 409), leave apply checks overlap and balance (422), approve re-checks the rules, payroll drafts every employee's line and Admin can lock (finalize) it.
+3. Money is integer paisa everywhere; deductions are computed from gross directly and capped at gross, so net pay can never go negative (a bug my smoke test caught — deductions once summed to more than gross because of per-day rounding).
+4. Repositories hold all SQL (parameterized only); routes stay thin; every endpoint re-checks role and data scope.
+5. Payslip is a printable HTML page (browser Print → PDF), not a PDF library.
+
+**Problem it solves**
+One source of truth for numbers: the dashboard, the payslip, and (in the next tasks) the AI answer all come from the same functions, so they can never disagree.
+
+**Key points to remember**
+- Rules as pure functions = easy tests (11 rule tests alone).
+- Server stamps time and dates in Asia/Karachi; the client can never fake them.
+- Approve re-validates overlap/balance because other requests may have been approved in between (the request excludes itself).
+- Payroll: draft → Admin finalizes → locked forever (409 on retry).
+
+**VIVA answer (30 seconds)**
+> All business rules from the brief live as pure functions in one file — working days, the 09:15 late rule, the 5-hour half-day rule, leave quotas, the 1.5× gross formula and the tax slabs. The attendance, leave, and payroll services call those functions, and every endpoint checks role and data scope again. Payroll is a monthly draft that only Admin can lock. A live smoke test caught a rounding bug where deductions passed gross, so I now compute deductions from gross directly and cap them — net pay can never be negative.
+
 - [x] Step 1: Spec / Plan (spec.md, plan.md, tasks.md)
 - [x] Step 2: Project Setup (uv, .env, API key test)
 - [x] Step 2b: Data Models (Task 2)
 - [x] Step 3a: Auth, Roles, First-run Setup (Task 3)
+- [x] Step 4: Core HR Services — attendance, leave, payroll, KPIs (Task 4)
 - [ ] Step 3: First Agent (instructions + model)
 - [ ] Step 4: Tools (what actions the agent can do)
 - [ ] Step 5: Structured Output (Pydantic)

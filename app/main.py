@@ -10,7 +10,12 @@ from fastapi import FastAPI
 from app.config import Settings
 from app.db import init_db, make_engine
 from app.errors import install_error_handlers
+from app.routes import analytics as analytics_routes
+from app.routes import attendance as attendance_routes
 from app.routes import auth as auth_routes
+from app.routes import leaves as leaves_routes
+from app.routes import org as org_routes
+from app.routes import payroll as payroll_routes
 from app.schemas import HealthResponse
 
 
@@ -29,6 +34,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="HCM Lite AI Service", lifespan=lifespan)
 install_error_handlers(app)
 app.include_router(auth_routes.router)
+app.include_router(org_routes.router)
+app.include_router(attendance_routes.router)
+app.include_router(leaves_routes.router)
+app.include_router(payroll_routes.router)
+app.include_router(analytics_routes.router)
 
 
 @app.get("/health", response_model=HealthResponse)
