@@ -107,9 +107,10 @@ def test_calc_payslip_absent_unpaid_and_half_day_deductions() -> None:
     assert slip["deductions_minor"] == per_day * 5 // 2
 
 
-def test_calc_payslip_fully_absent_month_never_goes_negative() -> None:
-    """Regression: rounding must not push deductions above gross, and tax
-    follows actual pay, so net is never negative."""
+def test_calc_payslip_fully_absent_month_follows_brief_tax() -> None:
+    """Per the brief, the tax slab applies to gross x 12 no matter what.
+    Deductions are capped at gross, but the monthly tax is still owed —
+    so a fully absent month ends slightly negative. Documented edge."""
     slip = rules.calc_payslip(
         basic_minor=8_000_000,
         working_days=22,
@@ -118,7 +119,8 @@ def test_calc_payslip_fully_absent_month_never_goes_negative() -> None:
         paid_leave_days=0,
         unpaid_leave_days=0,
     )
+    gross = rules.gross_from_basic(8_000_000)
     assert slip["absent_days"] == 22
-    assert slip["deductions_minor"] == slip["gross_minor"]  # capped at gross
-    assert slip["tax_minor"] == 0  # nothing paid, nothing taxed
-    assert slip["net_minor"] == 0
+    assert slip["deductions_minor"] == gross  # capped at gross
+    assert slip["tax_minor"] == rules.monthly_tax_minor(gross)  # brief: gross x 12 / 12
+    assert slip["net_minor"] == -slip["tax_minor"]

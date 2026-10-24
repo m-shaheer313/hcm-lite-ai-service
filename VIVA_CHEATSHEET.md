@@ -90,6 +90,8 @@ hcm-lite-ai-service/
 | `app/services/payroll_service.py` | Payroll logic | Monthly run, finalize lock, payslip | draft lines per employee, admin finalize (locked), printable HTML payslip | "Payroll is a draft until Admin locks it." |
 | `app/services/analytics_service.py` | KPI logic | Role-scoped numbers | company KPIs (Admin/HR) vs personal KPIs (Employee) | "The same numbers the AI will quote later." |
 | `app/repositories/` | SQL layer | The only place queries live | one file per table family (users, employees, attendance, leaves, payroll, departments) | "SQL lives here, not in routes." |
+| `app/tools/` | AI tools | The agent's hands | 7 tools (headcount, attendance, late-comers, leave, payroll, search, my-balance) + role allowlist + ToolDeps | "Tools call the same services as the dashboards — never SQL." |
+| `app/tools/hr_tools.py` | Tool functions | Thin wrappers over services | `@function_tool` defs + inner testable functions + `_safe` error wrapper | "A tool result is small JSON; an error is {error, message}." |
 | `tests/conftest.py` | Test setup | Gives every test a fresh in-memory SQLite DB | `engine` and `session` fixtures; dummy secret only | "Each test gets a clean database in memory." |
 | `tests/` | Test files | Check that things still work | SQLite + dummy secret in conftest; no real keys | "It catches bugs before the demo." |
 | `docs/` | Notes folder | Contract and design notes | Filled in later tasks | "Where I keep my design promises." |
@@ -287,11 +289,42 @@ One source of truth for numbers: the dashboard, the payslip, and (in the next ta
 **VIVA answer (30 seconds)**
 > All business rules from the brief live as pure functions in one file — working days, the 09:15 late rule, the 5-hour half-day rule, leave quotas, the 1.5× gross formula and the tax slabs. The attendance, leave, and payroll services call those functions, and every endpoint checks role and data scope again. Payroll is a monthly draft that only Admin can lock. A live smoke test caught a rounding bug where deductions passed gross, so I now compute deductions from gross directly and cap them — net pay can never be negative.
 
+## Step 5: AI Tools + Role Allowlist (Task 5)
+
+**What is it?**
+Seven tools the AI agent can call (headcount, attendance summary, late-comers, leave summary, payroll summary, employee search, my leave balance). Each tool calls the SAME service functions the dashboards use, with the verified user context.
+
+**Simple analogy (for non-tech people)**
+The AI is a new employee at the front desk. It does not get keys to the record room (the database). It asks the same clerks (services) that the dashboards ask, and it carries the visitor's ID card (the verified user), so the clerk only answers what that visitor may hear.
+
+**Why did I use it?**
+So the AI answer can never disagree with the dashboard — both come from the same functions. And so access control does not depend on the model being polite: the allowlist is code.
+
+**How did I do it?**
+1. Wrote each tool with the SDK's `@function_tool`; the docstring becomes the tool description the model sees.
+2. Each tool is a thin wrapper: it calls an inner function that calls a service with `ToolDeps` (verified UserContext + DB session). No SQL inside tools.
+3. A `_safe` wrapper turns every error into `{"error": code, "message": text}` — the model never sees a traceback.
+4. `tools_for_role(role)`: Admin/HR get all seven; an Employee's agent is BUILT with only `get_my_leave_balance`. Asking for a colleague's salary fails at the tool layer (`forbidden`), because the tool simply does not exist for them.
+5. Tests call the inner functions directly — no API key, no LLM. One test asserts tool numbers equal `GET /analytics/kpis` numbers for the same filters.
+
+**Problem it solves**
+Wrong or leaked answers: role mistakes are impossible by construction (no tool to misuse), numbers always match the dashboard, and salary never appears in search output.
+
+**Key points to remember**
+- Allowlist in code, not in the prompt — the model cannot "try" a tool it was not given.
+- Employee → salary question = refusal; the tool layer returns forbidden even if asked directly.
+- Tool output is small JSON; errors are JSON too, never tracebacks.
+- Dashboard equality is tested: same filters → same numbers.
+
+**VIVA answer (30 seconds)**
+> The agent gets seven tools, but which tools depends on who is logged in — I build the agent per request from a code-level allowlist, so an Employee's agent physically has no payroll or search tool. Every tool calls the same service functions as the REST dashboards with the verified user context, so AI answers always match the dashboard, and a test proves that equality. Errors inside a tool come back as a small JSON error object, never a traceback.
+
 - [x] Step 1: Spec / Plan (spec.md, plan.md, tasks.md)
 - [x] Step 2: Project Setup (uv, .env, API key test)
 - [x] Step 2b: Data Models (Task 2)
 - [x] Step 3a: Auth, Roles, First-run Setup (Task 3)
 - [x] Step 4: Core HR Services — attendance, leave, payroll, KPIs (Task 4)
+- [x] Step 5: AI Tools + role allowlist (Task 5)
 - [ ] Step 3: First Agent (instructions + model)
 - [ ] Step 4: Tools (what actions the agent can do)
 - [ ] Step 5: Structured Output (Pydantic)
