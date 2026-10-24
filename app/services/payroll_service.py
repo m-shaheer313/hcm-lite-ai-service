@@ -101,6 +101,7 @@ def summary(session: Session, ctx: UserContext, *, month: str) -> dict:
         raise NotFoundError(f"No payroll run for {month}.")
     slips = pay_repo.payslips_for_run(session, run.id)
     return {
+        "id": run.id,
         "month": month,
         "status": run.status,
         "employee_count": len(slips),
@@ -126,10 +127,16 @@ def my_payslip(session: Session, ctx: UserContext, *, month: str) -> Payslip:
 
 
 def payslip_html(session: Session, ctx: UserContext, *, month: str) -> str:
-    """My payslip as a simple printable HTML page (browser Print -> PDF)."""
+    """My payslip as a simple printable HTML page (browser Print -> PDF).
+
+    Everything interpolated into the HTML is escaped — employee names are
+    user-entered data and must never become markup.
+    """
+    import html
+
     slip = my_payslip(session, ctx, month=month)
     employee = emp_repo.get_by_id(session, ctx.employee_id)
-    name = employee.full_name if employee else "?"
+    name = html.escape(employee.full_name) if employee else "?"
 
     def pkr(minor: int) -> str:
         return f"PKR {minor / 100:,.2f}"

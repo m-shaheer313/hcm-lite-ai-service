@@ -4,6 +4,8 @@ Business rules live here, not in routes. The app starts EMPTY; setup creates
 the Admin and the default leave types (configuration, not dummy data).
 """
 
+import secrets
+
 from sqlmodel import Session, select
 
 from app.config import Settings
@@ -123,6 +125,30 @@ def change_password(
     user.must_change_password = False
     session.add(user)
     session.commit()
+
+
+def setup_status(session: Session) -> bool:
+    """True once the first user exists (setup is done)."""
+    return user_repo.count_users(session) > 0
+
+
+def create_hr_login(session: Session, ctx: UserContext, *, email: str) -> tuple[User, str]:
+    """Admin creates an HR login with a one-time temporary password."""
+    if ctx.role != "admin":
+        raise ForbiddenError("Only Admin can create HR logins.")
+    if "@" not in email:
+        raise RuleViolationError("Email must be a valid email address.")
+    if user_repo.get_by_email(session, email):
+        raise ConflictError("A login with this email already exists.")
+    temp_password = secrets.token_urlsafe(8)
+    user = user_repo.create_user(
+        session,
+        email=email,
+        password_hash=hash_password(temp_password),
+        role="hr",
+        must_change_password=True,
+    )
+    return user, temp_password
 
 
 def me(session: Session, ctx: UserContext) -> dict:

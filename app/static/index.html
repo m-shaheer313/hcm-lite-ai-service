@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HCM Lite</title>
+<style>
+  :root { --brand:#0f4c81; --bg:#f4f6f9; --card:#fff; --line:#dde3ea; --muted:#667; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,Segoe UI,Arial,sans-serif; background:var(--bg); color:#1c2530; }
+  header { background:var(--brand); color:#fff; padding:12px 16px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  header h1 { font-size:18px; margin:0; flex:1; }
+  header button { background:#fff; color:var(--brand); border:0; border-radius:6px; padding:6px 12px; font-weight:600; cursor:pointer; }
+  main { max-width:920px; margin:0 auto; padding:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:14px; }
+  .card h2 { font-size:15px; margin:0 0 10px; color:var(--brand); text-transform:uppercase; letter-spacing:.04em; }
+  label { display:block; font-size:13px; color:var(--muted); margin:8px 0 3px; }
+  input, select, textarea { width:100%; padding:8px; border:1px solid var(--line); border-radius:6px; font-size:14px; background:#fff; }
+  textarea { min-height:60px; resize:vertical; }
+  button.primary { background:var(--brand); color:#fff; border:0; border-radius:6px; padding:9px 14px; font-size:14px; font-weight:600; cursor:pointer; margin-top:10px; }
+  button.small { background:#e8eef5; color:var(--brand); border:0; border-radius:6px; padding:5px 10px; font-size:13px; cursor:pointer; margin:2px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:end; }
+  .row > div { flex:1; min-width:130px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); }
+  .msg { margin:8px 0; padding:8px 10px; border-radius:6px; font-size:14px; }
+  .msg.err { background:#fdecea; color:#8a1c11; }
+  .msg.ok { background:#e8f5e9; color:#1b5e20; }
+  .muted { color:var(--muted); font-size:13px; }
+  .badge { display:inline-block; background:#e8eef5; color:var(--brand); border-radius:10px; padding:1px 8px; font-size:11px; font-weight:700; margin-left:6px; }
+  .chat { max-height:320px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; margin-bottom:8px; }
+  .bubble { border:1px solid var(--line); border-radius:10px; padding:8px 10px; font-size:14px; max-width:85%; white-space:pre-wrap; }
+  .bubble.you { align-self:flex-end; background:#e8f0fe; }
+  .bubble.ai { align-self:flex-start; background:#fff; }
+  .menu button.active { background:var(--brand); color:#fff; }
+  .panel { display:none; }
+  .panel.show { display:block; }
+  @media (max-width:420px) { main { padding:10px; } .row > div { min-width:100%; } }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="brand">HCM Lite</h1>
+  <span id="who" class="muted" style="color:#dce8f5"></span>
+  <button id="logoutBtn" style="display:none" type="button">Log out</button>
+</header>
+<main id="main"><p class="muted">Loading…</p></main>
+<nav id="menu" style="display:none; max-width:920px; margin:0 auto; padding:0 16px;"></nav>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -8,8 +8,11 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import Settings
 from app.db import init_db, make_engine
@@ -26,6 +29,7 @@ from app.schemas import HealthResponse
 logger = logging.getLogger("hcm.requests")
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 QUIET_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 @asynccontextmanager
@@ -49,6 +53,13 @@ app.include_router(leaves_routes.router)
 app.include_router(payroll_routes.router)
 app.include_router(analytics_routes.router)
 app.include_router(ai_routes.router)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/", include_in_schema=False)
+def index() -> FileResponse:
+    """The single web page (HTML + vanilla JS, no build step)."""
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 @app.middleware("http")

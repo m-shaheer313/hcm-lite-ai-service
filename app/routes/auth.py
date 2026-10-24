@@ -7,14 +7,17 @@ from sqlmodel import Session
 
 from app.config import Settings
 from app.context import UserContext
-from app.deps import get_current_user, get_db
+from app.deps import get_current_user, get_db, require_roles
 from app.schemas import (
     ChangePasswordRequest,
+    HrLoginCreate,
+    HrLoginCreated,
     LoginRequest,
     LoginResponse,
     MeResponse,
     OkResponse,
     SetupRequest,
+    SetupStatusResponse,
 )
 from app.security import create_access_token
 from app.services import auth_service
@@ -23,6 +26,12 @@ router = APIRouter(tags=["auth"])
 
 DbSession = Annotated[Session, Depends(get_db)]
 CurrentUser = Annotated[UserContext, Depends(get_current_user)]
+
+
+@router.get("/setup/status", response_model=SetupStatusResponse)
+def setup_status(session: DbSession) -> SetupStatusResponse:
+    """Public: is first-run setup still needed? (used by the web page)."""
+    return SetupStatusResponse(setup_done=auth_service.setup_status(session))
 
 
 @router.post("/setup", response_model=LoginResponse)
@@ -70,3 +79,14 @@ def change_password(
 def me(ctx: CurrentUser, session: DbSession) -> MeResponse:
     """My profile. Also works before the password change is done."""
     return MeResponse(**auth_service.me(session, ctx))
+
+
+@router.post("/users", response_model=HrLoginCreated)
+def create_hr_login(
+    body: HrLoginCreate,
+    ctx: Annotated[UserContext, Depends(require_roles("admin"))],
+    session: DbSession,
+) -> HrLoginCreated:
+    """Admin creates an HR login. The temporary password is shown ONCE."""
+    user, temp_password = auth_service.create_hr_login(session, ctx, email=body.email)
+    return HrLoginCreated(email=user.email, temporary_password=temp_password)

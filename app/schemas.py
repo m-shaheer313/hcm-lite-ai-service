@@ -59,6 +59,25 @@ class OkResponse(BaseModel):
     ok: bool = True
 
 
+class SetupStatusResponse(BaseModel):
+    """GET /setup/status — public, used by the web page."""
+
+    setup_done: bool
+
+
+class HrLoginCreate(StrictModel):
+    """POST /users (Admin): create an HR login."""
+
+    email: str = Field(min_length=3, max_length=254)
+
+
+class HrLoginCreated(BaseModel):
+    """The temporary password is shown exactly once."""
+
+    email: str
+    temporary_password: str
+
+
 class MeResponse(BaseModel):
     """GET /me."""
 
@@ -225,6 +244,7 @@ class PayrollRunOut(BaseModel):
 
 
 class PayrollSummaryOut(BaseModel):
+    id: int
     month: str
     status: str
     employee_count: int
