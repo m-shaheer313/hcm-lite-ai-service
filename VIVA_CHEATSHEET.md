@@ -76,6 +76,13 @@ hcm-lite-ai-service/
 | `app/schemas.py` | Data shapes | Fixed format for API bodies | Pydantic models (HealthResponse so far) | "It forces answers into a clean format." |
 | `app/models.py` | Database tables | One SQLModel class per table | users, employees, departments, leave_types, leave_requests, attendance, payroll_runs, payslips, ai_logs, settings, holidays | "The rules live in the database: one attendance per day, one payroll per month, money as integer paisa." |
 | `app/db.py` | Database connection | Builds the engine and creates tables | `make_engine`, `init_db` (create_all, no Alembic), session dependency | "Postgres on Render, SQLite in tests — same code." |
+| `app/errors.py` | Error translator | ONE place that maps errors to HTTP | AppError family (401/403/404/409/422) → `{"error": {code, message}}` | "Every error looks the same and never leaks a stack trace." |
+| `app/security.py` | Crypto helpers | Passwords and tokens | bcrypt hash/verify (72-byte limit), JWT HS256 create/decode | "Passwords are hashed with bcrypt; tokens are signed with the secret." |
+| `app/context.py` | Verified user object | The same identity every service AND AI tool receive | `UserContext` (user_id, role, employee_id) + `assert_can_view_employee` | "The AI can never know more than the logged-in user." |
+| `app/deps.py` | FastAPI dependencies | Builds session + verified user per request | `get_db`, `get_current_user` (reloads user, checks is_active), `require_roles(...)` | "Each request re-checks who you are, even with a valid token." |
+| `app/repositories/users.py` | User table access | The only place that queries users | get_by_email, get_by_id, count_users, create_user (parameterized) | "SQL lives here, not in routes." |
+| `app/services/auth_service.py` | Auth logic | Setup, login, change password rules | first-run guard, default leave types, temp-password rules | "All auth rules live in services, not in routes." |
+| `app/routes/auth.py` | HTTP layer | Thin auth endpoints | /setup, /auth/login, /auth/change-password, /me | "Routes only parse and call the service." |
 | `tests/conftest.py` | Test setup | Gives every test a fresh in-memory SQLite DB | `engine` and `session` fixtures; dummy secret only | "Each test gets a clean database in memory." |
 | `tests/` | Test files | Check that things still work | SQLite + dummy secret in conftest; no real keys | "It catches bugs before the demo." |
 | `docs/` | Notes folder | Contract and design notes | Filled in later tasks | "Where I keep my design promises." |
@@ -213,9 +220,40 @@ Data integrity with zero trust in code paths: the 409 (second check-in) and one-
 **VIVA answer (30 seconds)**
 > I defined every table with SQLModel and pushed the business-critical rules into database constraints — for example a unique index on (employee, day) is what physically backs the "second check-in is rejected with 409" rule. All money is stored as integer paisa so there is never a float rounding error, and the same models run on SQLite for tests and Neon Postgres in production.
 
+## Step 3a: Auth, Roles, and First-run Setup (Task 3)
+
+**What is it?**
+Login with JWT tokens, three roles (admin, hr, employee), a first-run `/setup` that creates the Admin and default leave types, and a guard that checks role and data scope on every request.
+
+**Simple analogy (for non-tech people)**
+An office ID card: you tap in at every door (every request), the guard checks the card is real AND still active — a fired employee's card stops working the same minute.
+
+**Why did I use it?**
+The brief says the AI must have exactly the same access as the logged-in user. That is only possible if every call — REST or AI tool — goes through the same verified user context. Also the app must start empty, so setup must be a one-time action.
+
+**How did I do it?**
+1. bcrypt for password hashing (direct library, not passlib; 72-byte limit handled by validation) and JWT HS256 with the secret from env.
+2. On every request: decode token → reload the user from the DB → reject if missing or `is_active=False`. So deactivating a user locks them out instantly.
+3. `/setup` works only while zero users exist (409 after), with `ADMIN_EMAIL`/`ADMIN_PASSWORD` env fallback, and seeds the four default leave types (annual 14, sick 8, casual 10, unpaid unlimited) — configuration, not dummy data.
+4. `require_roles("admin", ...)` guards and `assert_can_view_employee` enforce role + data scope. The same `UserContext` object will be handed to AI tools in Task 5.
+5. Temp-password flow: while `must_change_password` is true, only change-password and `/me` work; everything else gets 403.
+
+**Problem it solves**
+No stolen or old token survives deactivation, no employee can read another employee's rows, and there is no way to "become" admin by sending a role in the request body — the server never trusts client-sent roles.
+
+**Key points to remember**
+- JWT carries only user id + role; the DB is the source of truth on every request.
+- Deactivated user = instant lockout (401 on old tokens, 403 on login).
+- Setup is once (409 after that); leave-type quotas come from the brief.
+- Every error has the same JSON shape `{"error": {"code", "message"}}`.
+
+**VIVA answer (30 seconds)**
+> Auth is JWT with a bcrypt-hashed password. On every single request I decode the token, reload the user from the database, and reject if the account was deactivated — so an old token dies the moment an admin turns someone off. Roles and data scope are checked by one reusable guard that produces a verified UserContext, and that exact same context object is what I will pass to the AI tools, which is how I guarantee the AI never sees more than the logged-in user.
+
 - [x] Step 1: Spec / Plan (spec.md, plan.md, tasks.md)
 - [x] Step 2: Project Setup (uv, .env, API key test)
 - [x] Step 2b: Data Models (Task 2)
+- [x] Step 3a: Auth, Roles, First-run Setup (Task 3)
 - [ ] Step 3: First Agent (instructions + model)
 - [ ] Step 4: Tools (what actions the agent can do)
 - [ ] Step 5: Structured Output (Pydantic)

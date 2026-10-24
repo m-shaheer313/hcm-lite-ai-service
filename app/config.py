@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     admin_password: str | None = None
     company_name: str = "HCM Lite"
 
+    # Auth
+    jwt_expires_minutes: int = 240  # 4 hours; short for a hackathon demo
+
     # AI settings (used from Task 6 on). The key is mapped to the SDK in Task 6.
     ai_api_key: str | None = None
     ai_model: str | None = None
