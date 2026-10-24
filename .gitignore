@@ -11,3 +11,11 @@ wheels/
  
 # Secrets
 .env
+
+# Local databases and tool caches
+*.db
+.pytest_cache/
+.ruff_cache/
+
+# Scanner plugin folder
+.mimosa/
