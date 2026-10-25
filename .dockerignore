@@ -1,0 +1,14 @@
+# Keep secrets and junk out of the image.
+.env
+.venv
+__pycache__
+*.db
+.pytest_cache
+.ruff_cache
+.mimosa
+git
+docs
+tests
+eval
+VIVA_CHEATSHEET.md
+_viva_format_reference.md

@@ -192,7 +192,8 @@ def _decide(
                 today=min(today, req.start_day),
                 exclude_id=req.id,
             )
-            assert type_id == lt.id
+            if type_id != lt.id:
+                raise NotFoundError("Leave type no longer exists.")
             req.working_days = working_days
 
     req.status = "approved" if approve else "rejected"

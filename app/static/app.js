@@ -127,6 +127,8 @@ function showChangePassword() {
 
 async function afterLogin() {
   state.me = await api("/me");
+  // Hide the login/setup/change forms before the role menu appears.
+  clear(main);
   document.getElementById("brand").textContent = state.me.company_name || "HCM Lite";
   document.getElementById("who").textContent = state.me.email + " · " + state.me.role;
   document.getElementById("logoutBtn").style.display = "";
