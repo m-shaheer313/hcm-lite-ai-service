@@ -7,7 +7,9 @@ functions as the dashboards, so every AI number matches the screen, and every
 user only sees what their role allows. The app starts **empty** — no seed or
 dummy data.
 
-**Hosted URL:** `<your-render-url>` (free tier — see the cold-start note below).
+**Hosted URL:** <https://hcm-lite-ai-service.onrender.com> — free tier: the app
+sleeps after ~15 min idle, so the first request can take 30–60 seconds
+(**open the link once a few minutes before judging**).
 
 ## Stack
 
