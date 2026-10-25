@@ -156,3 +156,25 @@ def test_deactivated_user_cannot_login_or_use_old_token(client, session: Session
         ).status_code
         == 403
     )
+
+
+def test_forged_role_claim_cannot_escalate(client, session: Session) -> None:
+    """A token whose role CLAIM says admin must not grant admin access:
+    the role always comes from the DB row, and the claim is never read."""
+    from app.config import Settings
+    from app.security import create_access_token
+
+    client.post("/setup", json={"email": "admin@co.com", "password": TEST_PASSWORD})
+    employee = make_user(session, "emp@co.com", "employee")
+    settings = Settings(_env_file=None)  # reads JWT_SECRET from the test env
+    forged = create_access_token(
+        user_id=employee.id, role="admin",
+        secret=settings.jwt_secret, expires_minutes=settings.jwt_expires_minutes,
+    )
+    headers = {"Authorization": f"Bearer {forged}"}
+
+    # Positive control: the token itself is valid (it authenticates fine)...
+    assert client.get("/me", headers=headers).status_code == 200
+    # ...but the DB role (employee) decides authorization, not the claim.
+    assert client.post("/departments", json={"name": "X"}, headers=headers).status_code == 403
+    assert client.post("/ai/dashboard-summary", headers=headers).status_code == 403
